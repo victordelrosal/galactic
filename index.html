@@ -91,6 +91,10 @@ let isPaused = false;
 // Add laser sound effect
 const laserSound = new Audio('laser.mp3');
 
+// Load astronaut image
+const astronautImage = new Image();
+astronautImage.src = 'astronaut.png';
+
 // Parallax background layers
 const starLayers = [
     { stars: [], count: 100, speed: 0.05, size: 0.8, color: 'rgba(255, 255, 255, 0.3)' }, // Distant stars
@@ -231,7 +235,9 @@ const player = {
     speed: 0.2,
     cooldown: 0,
     radius: 20,
-    thrusting: false
+    thrusting: false,
+    width: 80, // Width for the astronaut sprite
+    height: 80 // Height for the astronaut sprite
 };
 
 // Game state
@@ -366,19 +372,17 @@ function render() {
         ctx.fill();
     });
     
-    // Draw player
+    // Draw player (astronaut)
+    ctx.save();
     ctx.translate(player.x, player.y);
     ctx.rotate(player.rotation);
-    ctx.strokeStyle = '#0FF';
-    ctx.lineWidth = 2;
     
-    // Ship body
-    ctx.beginPath();
-    ctx.moveTo(-15, -15);
-    ctx.lineTo(25, 0);
-    ctx.lineTo(-15, 15);
-    ctx.closePath();
-    ctx.stroke();
+    // Draw astronaut image instead of triangle
+    ctx.drawImage(
+        astronautImage, 
+        -player.width/2, -player.height/2, 
+        player.width, player.height
+    );
     
     // Draw engine flames when thrusting
     if (player.thrusting && fuel > 0) {
@@ -386,9 +390,9 @@ function render() {
         ctx.beginPath();
         // Create a more dynamic flame effect
         const flameLength = 15 + Math.random() * 10; // Varying flame length
-        ctx.moveTo(-15, -8);
-        ctx.lineTo(-15 - flameLength, 0);
-        ctx.lineTo(-15, 8);
+        ctx.moveTo(-player.width/2, -8);
+        ctx.lineTo(-player.width/2 - flameLength, 0);
+        ctx.lineTo(-player.width/2, 8);
         // Random orange-red flame colors
         const flameColor = Math.floor(Math.random() * 155) + 100;
         ctx.strokeStyle = `rgb(255, ${flameColor}, 0)`;
@@ -397,9 +401,9 @@ function render() {
         
         // Add some inner flame detail (brighter core)
         ctx.beginPath();
-        ctx.moveTo(-15, -4);
-        ctx.lineTo(-15 - flameLength * 0.7, 0);
-        ctx.lineTo(-15, 4);
+        ctx.moveTo(-player.width/2, -4);
+        ctx.lineTo(-player.width/2 - flameLength * 0.7, 0);
+        ctx.lineTo(-player.width/2, 4);
         ctx.strokeStyle = '#FFFF00'; // Bright yellow core
         ctx.lineWidth = 1.5;
         ctx.stroke();
@@ -409,8 +413,8 @@ function render() {
     if((keys['ArrowLeft'] || keys['a']) && fuel > 0) {
         // Right thruster fires when turning left
         ctx.beginPath();
-        ctx.moveTo(0, 8);
-        ctx.lineTo(5, 12 + Math.random() * 5);
+        ctx.moveTo(0, player.height/2);
+        ctx.lineTo(5, player.height/2 + 8 + Math.random() * 5);
         ctx.strokeStyle = '#FF8800';
         ctx.lineWidth = 1.5;
         ctx.stroke();
@@ -419,8 +423,8 @@ function render() {
     if((keys['ArrowRight'] || keys['d']) && fuel > 0) {
         // Left thruster fires when turning right
         ctx.beginPath();
-        ctx.moveTo(0, -8);
-        ctx.lineTo(5, -12 - Math.random() * 5);
+        ctx.moveTo(0, -player.height/2);
+        ctx.lineTo(5, -player.height/2 - 8 - Math.random() * 5);
         ctx.strokeStyle = '#FF8800';
         ctx.lineWidth = 1.5;
         ctx.stroke();
@@ -430,15 +434,15 @@ function render() {
     if((keys['ArrowDown'] || keys['s']) && fuel > 0) {
         ctx.beginPath();
         const revFlameLength = 8 + Math.random() * 6;
-        ctx.moveTo(20, -5);
-        ctx.lineTo(25 + revFlameLength, 0);
-        ctx.lineTo(20, 5);
+        ctx.moveTo(player.width/2, -5);
+        ctx.lineTo(player.width/2 + revFlameLength, 0);
+        ctx.lineTo(player.width/2, 5);
         ctx.strokeStyle = '#FF7700';
         ctx.lineWidth = 2;
         ctx.stroke();
     }
     
-    ctx.resetTransform();
+    ctx.restore();
     
     // Draw projectiles (lasers)
     projectiles.forEach(p => {
@@ -582,8 +586,8 @@ function movePlayer() {
 
 function shoot() {
     projectiles.push({
-        x: player.x + Math.cos(player.rotation) * 25,
-        y: player.y + Math.sin(player.rotation) * 25,
+        x: player.x + Math.cos(player.rotation) * (player.width/2),
+        y: player.y + Math.sin(player.rotation) * (player.width/2),
         velX: Math.cos(player.rotation) * 20, // Increased velocity
         velY: Math.sin(player.rotation) * 20,
         timer: 60, // Increased lifetime
@@ -764,8 +768,8 @@ function createExplosion(x, y, count = 10) {
 
 function createThrusterEffect() {
     // Create exhaust particles behind the ship
-    const thrustX = player.x - Math.cos(player.rotation) * 20;
-    const thrustY = player.y - Math.sin(player.rotation) * 20;
+    const thrustX = player.x - Math.cos(player.rotation) * (player.width/2);
+    const thrustY = player.y - Math.sin(player.rotation) * (player.width/2);
     
     for (let i = 0; i < 3; i++) { // Increased number of particles
         particles.push({
@@ -782,8 +786,8 @@ function createThrusterEffect() {
     // Add side thruster particles for turning
     if(keys['ArrowLeft'] || keys['a']) {
         // Right thruster particles when turning left
-        const rightThrustX = player.x + Math.cos(player.rotation + Math.PI/2) * 10;
-        const rightThrustY = player.y + Math.sin(player.rotation + Math.PI/2) * 10;
+        const rightThrustX = player.x + Math.cos(player.rotation + Math.PI/2) * (player.height/2);
+        const rightThrustY = player.y + Math.sin(player.rotation + Math.PI/2) * (player.height/2);
         
         particles.push({
             x: rightThrustX,
@@ -798,8 +802,8 @@ function createThrusterEffect() {
     
     if(keys['ArrowRight'] || keys['d']) {
         // Left thruster particles when turning right
-        const leftThrustX = player.x + Math.cos(player.rotation - Math.PI/2) * 10;
-        const leftThrustY = player.y + Math.sin(player.rotation - Math.PI/2) * 10;
+        const leftThrustX = player.x + Math.cos(player.rotation - Math.PI/2) * (player.height/2);
+        const leftThrustY = player.y + Math.sin(player.rotation - Math.PI/2) * (player.height/2);
         
         particles.push({
             x: leftThrustX,
@@ -814,8 +818,8 @@ function createThrusterEffect() {
     
     // Add reverse thruster particles
     if(keys['ArrowDown'] || keys['s']) {
-        const frontThrustX = player.x + Math.cos(player.rotation) * 25;
-        const frontThrustY = player.y + Math.sin(player.rotation) * 25;
+        const frontThrustX = player.x + Math.cos(player.rotation) * (player.width/2);
+        const frontThrustY = player.y + Math.sin(player.rotation) * (player.width/2);
         
         particles.push({
             x: frontThrustX,
