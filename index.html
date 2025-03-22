@@ -88,6 +88,9 @@ const GRAVITY_CENTER_X = canvas.width / 2;
 const GRAVITY_CENTER_Y = canvas.height / 2;
 let isPaused = false;
 
+// Add laser sound effect
+const laserSound = new Audio('laser.mp3');
+
 // Set canvas size
 function resizeCanvas() {
     canvas.width = window.innerWidth * 0.9;
@@ -377,6 +380,10 @@ function shoot() {
         width: 30, // Laser length
         power: 2 // Damage power
     });
+    
+    // Play laser sound
+    laserSound.currentTime = 0; // Rewind the sound to the beginning
+    laserSound.play();
     
     // Add laser sound or flash effect
     screenShake = 3; // Small screen shake for powerful weapon feedback
