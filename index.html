@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Stellar Blaster</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            font-family: Arial, sans-serif;
+        }
+        #gameCanvas {
+            background: #000;
+            box-shadow: 0 0 50px rgba(0, 100, 255, 0.3);
+        }
+        #hud {
+            position: fixed;
+            top: 20px;
+            color: #FFF;
+            font-size: 24px;
+            text-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
+        }
+        #gameOver {
+            display: none;
+            position: fixed;
+            color: #FF0000;
+            font-size: 48px;
+            text-align: center;
+            text-shadow: 0 0 20px rgba(255, 0, 0, 0.5);
+        }
+        button {
+            background: #444;
+            color: white;
+            border: 2px solid #FFF;
+            padding: 10px 20px;
+            font-size: 20px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        button:hover {
+            background: #666;
+            transform: scale(1.1);
+        }
+    </style>
+</head>
+<body>
+    <div id="hud">Score: <span id="score">0</span> | Health: <span id="health">100</span> | Fuel: <span id="fuel">100</span> | Use arrow keys or WASD to move</div>
+    <div id="gameOver">
+        GAME OVER!<br>
+        <button onclick="resetGame()">Play Again</button>
+    </div>
+    <canvas id="gameCanvas"></canvas>
+
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+let score = 0, health = 100, fuel = 100;
+let screenShake = 0;
+const MAX_FUEL = 100;
+const FUEL_CONSUMPTION = 0.5;
+const FUEL_REGEN = 0.1;
+const THRUST_POWER = 0.2;
+let gravityEnabled = false;
+const GRAVITY_CENTER_X = canvas.width / 2;
+const GRAVITY_CENTER_Y = canvas.height / 2;
+
+// Set canvas size
+function resizeCanvas() {
+    canvas.width = window.innerWidth * 0.9;
+    canvas.height = window.innerHeight * 0.9;
+}
+resizeCanvas();
+window.addEventListener('resize', resizeCanvas);
+
+// Player
+const player = {
+    x: canvas.width/2,
+    y: canvas.height/2,
+    velX: 0,
+    velY: 0,
+    rotation: 0,
+    speed: 0.2,
+    cooldown: 0,
+    radius: 20,
+    thrusting: false
+};
+
+// Game state
+const projectiles = [];
+const enemies = [];
+const particles = [];
+const keys = {};
+let enemySpawnTimer = 0;
+
+// Input handling
+window.addEventListener('keydown', e => keys[e.key] = true);
+window.addEventListener('keyup', e => keys[e.key] = false);
+
+// Game loop
+function update() {
+    handleInput();
+    movePlayer();
+    updateProjectiles();
+    updateEnemies();
+    updateParticles();
+    spawnEnemies();
+    checkCollisions();
+    
+    // Update HUD
+    document.getElementById('score').textContent = score;
+    document.getElementById('health').textContent = health;
+    document.getElementById('fuel').textContent = fuel.toFixed(1);
+    
+    if(health <= 0) {
+        document.getElementById('gameOver').style.display = 'block';
+        return;
+    }
+    
+    requestAnimationFrame(update);
+    render();
+}
+
+function render() {
+    // Screen shake
+    const shakeX = screenShake ? Math.random() * screenShake : 0;
+    const shakeY = screenShake ? Math.random() * screenShake : 0;
+    screenShake *= 0.9;
+    
+    ctx.save();
+    ctx.translate(shakeX, shakeY);
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    
+    // Draw gravity well (subtle hint)
+    if (gravityEnabled) {
+        ctx.beginPath();
+        const gradient = ctx.createRadialGradient(
+            GRAVITY_CENTER_X, GRAVITY_CENTER_Y, 0,
+            GRAVITY_CENTER_X, GRAVITY_CENTER_Y, 200
+        );
+        gradient.addColorStop(0, 'rgba(50, 0, 80, 0.1)');
+        gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+        ctx.fillStyle = gradient;
+        ctx.arc(GRAVITY_CENTER_X, GRAVITY_CENTER_Y, 200, 0, Math.PI * 2);
+        ctx.fill();
+    }
+    
+    // Draw player
+    ctx.translate(player.x, player.y);
+    ctx.rotate(player.rotation);
+    ctx.strokeStyle = '#0FF';
+    ctx.lineWidth = 2;
+    
+    // Ship body
+    ctx.beginPath();
+    ctx.moveTo(-15, -15);
+    ctx.lineTo(25, 0);
+    ctx.lineTo(-15, 15);
+    ctx.closePath();
+    ctx.stroke();
+    
+    // Draw engine flames when thrusting
+    if (player.thrusting && fuel > 0) {
+        // Main thruster
+        ctx.beginPath();
+        // Create a more dynamic flame effect
+        const flameLength = 15 + Math.random() * 10; // Varying flame length
+        ctx.moveTo(-15, -8);
+        ctx.lineTo(-15 - flameLength, 0);
+        ctx.lineTo(-15, 8);
+        // Random orange-red flame colors
+        const flameColor = Math.floor(Math.random() * 155) + 100;
+        ctx.strokeStyle = `rgb(255, ${flameColor}, 0)`;
+        ctx.lineWidth = 3;
+        ctx.stroke();
+        
+        // Add some inner flame detail (brighter core)
+        ctx.beginPath();
+        ctx.moveTo(-15, -4);
+        ctx.lineTo(-15 - flameLength * 0.7, 0);
+        ctx.lineTo(-15, 4);
+        ctx.strokeStyle = '#FFFF00'; // Bright yellow core
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+    }
+    
+    // Directional thrusters for sideways movement
+    if((keys['ArrowLeft'] || keys['a']) && fuel > 0) {
+        // Right thruster fires when turning left
+        ctx.beginPath();
+        ctx.moveTo(0, 8);
+        ctx.lineTo(5, 12 + Math.random() * 5);
+        ctx.strokeStyle = '#FF8800';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+    }
+    
+    if((keys['ArrowRight'] || keys['d']) && fuel > 0) {
+        // Left thruster fires when turning right
+        ctx.beginPath();
+        ctx.moveTo(0, -8);
+        ctx.lineTo(5, -12 - Math.random() * 5);
+        ctx.strokeStyle = '#FF8800';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+    }
+    
+    // Breaking/reverse thrust
+    if((keys['ArrowDown'] || keys['s']) && fuel > 0) {
+        ctx.beginPath();
+        const revFlameLength = 8 + Math.random() * 6;
+        ctx.moveTo(20, -5);
+        ctx.lineTo(25 + revFlameLength, 0);
+        ctx.lineTo(20, 5);
+        ctx.strokeStyle = '#FF7700';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+    }
+    
+    ctx.resetTransform();
+    
+    // Draw projectiles
+    ctx.fillStyle = '#FF0';
+    projectiles.forEach(p => {
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 3, 0, Math.PI*2);
+        ctx.fill();
+    });
+    
+    // Draw enemies
+    ctx.fillStyle = '#F00';
+    enemies.forEach(e => {
+        ctx.beginPath();
+        ctx.arc(e.x, e.y, e.radius, 0, Math.PI*2);
+        ctx.fill();
+    });
+    
+    // Draw particles
+    particles.forEach(p => {
+        ctx.fillStyle = `rgba(255, ${p.green}, 0, ${p.alpha})`;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI*2);
+        ctx.fill();
+    });
+    
+    ctx.restore();
+}
+
+function handleInput() {
+    // Rotation controls
+    if(keys['ArrowLeft'] || keys['a']) {
+        player.rotation -= 0.08;
+        if(fuel > 0) {
+            createThrusterEffect(); // Also create particles for rotation
+            fuel = Math.max(0, fuel - FUEL_CONSUMPTION / 4);
+        }
+    }
+    
+    if(keys['ArrowRight'] || keys['d']) {
+        player.rotation += 0.08;
+        if(fuel > 0) {
+            createThrusterEffect(); // Also create particles for rotation
+            fuel = Math.max(0, fuel - FUEL_CONSUMPTION / 4);
+        }
+    }
+    
+    // Thrust controls with fuel consumption
+    player.thrusting = false;
+    if((keys['ArrowUp'] || keys['w']) && fuel > 0) {
+        player.thrusting = true;
+        player.velX += Math.cos(player.rotation) * THRUST_POWER;
+        player.velY += Math.sin(player.rotation) * THRUST_POWER;
+        
+        // Create thruster particles
+        createThrusterEffect();
+        
+        // Consume fuel
+        fuel = Math.max(0, fuel - FUEL_CONSUMPTION);
+    } else {
+        // Regenerate fuel slowly when not thrusting
+        fuel = Math.min(MAX_FUEL, fuel + FUEL_REGEN);
+    }
+    
+    // Breaking/reverse thrust (slower, consumes less fuel)
+    if((keys['ArrowDown'] || keys['s']) && fuel > 0) {
+        player.velX *= 0.97;
+        player.velY *= 0.97;
+        createThrusterEffect(); // Create particles for braking too
+        fuel = Math.max(0, fuel - FUEL_CONSUMPTION / 3);
+    }
+    
+    if(keys[' '] && player.cooldown <= 0) {
+        shoot();
+        player.cooldown = 10;
+    }
+    
+    // Toggle gravity with 'g' key
+    if(keys['g']) {
+        keys['g'] = false; // Reset to prevent multiple toggles
+        gravityEnabled = !gravityEnabled;
+    }
+}
+
+function movePlayer() {
+    player.x += player.velX;
+    player.y += player.velY;
+    player.velX *= 0.98;
+    player.velY *= 0.98;
+    player.cooldown--;
+    
+    // Screen wrap
+    if(player.x < 0) player.x = canvas.width;
+    if(player.x > canvas.width) player.x = 0;
+    if(player.y < 0) player.y = canvas.height;
+    if(player.y > canvas.height) player.y = 0;
+}
+
+function shoot() {
+    projectiles.push({
+        x: player.x + Math.cos(player.rotation) * 25,
+        y: player.y + Math.sin(player.rotation) * 25,
+        velX: Math.cos(player.rotation) * 15,
+        velY: Math.sin(player.rotation) * 15,
+        timer: 50
+    });
+}
+
+function updateProjectiles() {
+    projectiles.forEach(p => {
+        p.x += p.velX;
+        p.y += p.velY;
+        p.timer--;
+    });
+    
+    // Remove old projectiles
+    for(let i = projectiles.length-1; i >= 0; i--) {
+        if(projectiles[i].timer <= 0) projectiles.splice(i, 1);
+    }
+}
+
+function spawnEnemies() {
+    if(enemySpawnTimer-- <= 0) {
+        const side = Math.floor(Math.random() * 4);
+        let x, y;
+        if(side === 0) { x = 0; y = Math.random() * canvas.height; }
+        if(side === 1) { x = canvas.width; y = Math.random() * canvas.height; }
+        if(side === 2) { x = Math.random() * canvas.width; y = 0; }
+        if(side === 3) { x = Math.random() * canvas.width; y = canvas.height; }
+        
+        enemies.push({
+            x, y,
+            velX: (player.x - x) * 0.002,
+            velY: (player.y - y) * 0.002,
+            radius: 12,
+            health: 3
+        });
+        
+        enemySpawnTimer = 60;
+    }
+}
+
+function updateEnemies() {
+    enemies.forEach(e => {
+        e.x += e.velX;
+        e.y += e.velY;
+    });
+}
+
+function checkCollisions() {
+    enemies.forEach((enemy, ei) => {
+        // Player collision
+        const dx = player.x - enemy.x;
+        const dy = player.y - enemy.y;
+        const dist = Math.sqrt(dx*dx + dy*dy);
+        if(dist < player.radius + enemy.radius) {
+            health -= 2;
+            screenShake = 10;
+            createExplosion(enemy.x, enemy.y);
+            enemies.splice(ei, 1);
+        }
+        
+        // Projectile collisions
+        projectiles.forEach((p, pi) => {
+            const pdx = p.x - enemy.x;
+            const pdy = p.y - enemy.y;
+            const pDist = Math.sqrt(pdx*pdx + pdy*pdy);
+            if(pDist < enemy.radius) {
+                enemy.health--;
+                score += 10;
+                createExplosion(p.x, p.y);
+                projectiles.splice(pi, 1);
+                if(enemy.health <= 0) {
+                    createExplosion(enemy.x, enemy.y, 15);
+                    enemies.splice(ei, 1);
+                    score += 50;
+                }
+            }
+        });
+    });
+}
+
+function createExplosion(x, y, count = 10) {
+    for(let i = 0; i < count; i++) {
+        particles.push({
+            x, y,
+            velX: (Math.random() - 0.5) * 5,
+            velY: (Math.random() - 0.5) * 5,
+            alpha: 1,
+            size: Math.random() * 4,
+            green: Math.random() * 255
+        });
+    }
+}
+
+function createThrusterEffect() {
+    // Create exhaust particles behind the ship
+    const thrustX = player.x - Math.cos(player.rotation) * 20;
+    const thrustY = player.y - Math.sin(player.rotation) * 20;
+    
+    for (let i = 0; i < 3; i++) { // Increased number of particles
+        particles.push({
+            x: thrustX + (Math.random() - 0.5) * 10,
+            y: thrustY + (Math.random() - 0.5) * 10,
+            velX: -Math.cos(player.rotation) * (3 + Math.random() * 3), // Increased velocity
+            velY: -Math.sin(player.rotation) * (3 + Math.random() * 3),
+            alpha: 0.8,
+            size: 1 + Math.random() * 3,
+            green: 100 + Math.random() * 155
+        });
+    }
+    
+    // Add side thruster particles for turning
+    if(keys['ArrowLeft'] || keys['a']) {
+        // Right thruster particles when turning left
+        const rightThrustX = player.x + Math.cos(player.rotation + Math.PI/2) * 10;
+        const rightThrustY = player.y + Math.sin(player.rotation + Math.PI/2) * 10;
+        
+        particles.push({
+            x: rightThrustX,
+            y: rightThrustY,
+            velX: Math.cos(player.rotation + Math.PI/2) * 2,
+            velY: Math.sin(player.rotation + Math.PI/2) * 2,
+            alpha: 0.6,
+            size: 1 + Math.random() * 2,
+            green: 150 + Math.random() * 105
+        });
+    }
+    
+    if(keys['ArrowRight'] || keys['d']) {
+        // Left thruster particles when turning right
+        const leftThrustX = player.x + Math.cos(player.rotation - Math.PI/2) * 10;
+        const leftThrustY = player.y + Math.sin(player.rotation - Math.PI/2) * 10;
+        
+        particles.push({
+            x: leftThrustX,
+            y: leftThrustY,
+            velX: Math.cos(player.rotation - Math.PI/2) * 2,
+            velY: Math.sin(player.rotation - Math.PI/2) * 2,
+            alpha: 0.6,
+            size: 1 + Math.random() * 2,
+            green: 150 + Math.random() * 105
+        });
+    }
+    
+    // Add reverse thruster particles
+    if(keys['ArrowDown'] || keys['s']) {
+        const frontThrustX = player.x + Math.cos(player.rotation) * 25;
+        const frontThrustY = player.y + Math.sin(player.rotation) * 25;
+        
+        particles.push({
+            x: frontThrustX,
+            y: frontThrustY,
+            velX: Math.cos(player.rotation) * 2,
+            velY: Math.sin(player.rotation) * 2,
+            alpha: 0.7,
+            size: 1 + Math.random() * 2,
+            green: 120 + Math.random() * 135
+        });
+    }
+}
+
+function updateParticles() {
+    particles.forEach(p => {
+        p.x += p.velX;
+        p.y += p.velY;
+        p.alpha -= 0.02;
+        p.size *= 0.98;
+    });
+    
+    for(let i = particles.length-1; i >= 0; i--) {
+        if(particles[i].alpha <= 0) particles.splice(i, 1);
+    }
+}
+
+function resetGame() {
+    health = 100;
+    score = 0;
+    fuel = 100;
+    enemies.length = 0;
+    projectiles.length = 0;
+    particles.length = 0;
+    player.x = canvas.width/2;
+    player.y = canvas.height/2;
+    player.velX = 0;
+    player.velY = 0;
+    document.getElementById('gameOver').style.display = 'none';
+    update();
+}
+
+// Start game
+update();
+
+// Add background stars
+for(let i = 0; i < 200; i++) {
+    particles.push({
+        x: Math.random() * canvas.width,
+        y: Math.random() * canvas.height,
+        velX: 0,
+        velY: 0,
+        alpha: Math.random(),
+        size: Math.random() * 2,
+        green: 0
+    });
+}
+</script>
+</body>
+</html>
