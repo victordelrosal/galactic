@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Stellar Blaster</title>
+    <title>Galactic Blaster</title>
     <style>
         body {
             margin: 0;
@@ -23,6 +23,7 @@
             color: #FFF;
             font-size: 24px;
             text-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
+            right: 20px;
         }
         #gameOver {
             display: none;
@@ -45,10 +46,28 @@
             background: #666;
             transform: scale(1.1);
         }
+        #pauseButton {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: #444;
+            color: white;
+            border: 2px solid #FFF;
+            padding: 10px 20px;
+            font-size: 20px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        #pauseButton:hover {
+            background: #666;
+            transform: scale(1.1);
+        }
     </style>
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
 </head>
 <body>
     <div id="hud">Score: <span id="score">0</span> | Health: <span id="health">100</span> | Fuel: <span id="fuel">100</span> | Use arrow keys or WASD to move</div>
+    <button id="pauseButton" onclick="togglePause()">Pause</button>
     <div id="gameOver">
         GAME OVER!<br>
         <button onclick="resetGame()">Play Again</button>
@@ -67,6 +86,7 @@ const THRUST_POWER = 0.2;
 let gravityEnabled = false;
 const GRAVITY_CENTER_X = canvas.width / 2;
 const GRAVITY_CENTER_Y = canvas.height / 2;
+let isPaused = false;
 
 // Set canvas size
 function resizeCanvas() {
@@ -102,6 +122,7 @@ window.addEventListener('keyup', e => keys[e.key] = false);
 
 // Game loop
 function update() {
+    if (isPaused) return;
     handleInput();
     movePlayer();
     updateProjectiles();
@@ -223,11 +244,33 @@ function render() {
     
     ctx.resetTransform();
     
-    // Draw projectiles
-    ctx.fillStyle = '#FF0';
+    // Draw projectiles (lasers)
     projectiles.forEach(p => {
+        // Calculate the direction vector
+        const dirX = Math.cos(Math.atan2(p.velY, p.velX));
+        const dirY = Math.sin(Math.atan2(p.velY, p.velX));
+        
+        // Create a gradient for the laser beam
+        const gradient = ctx.createLinearGradient(
+            p.x - dirX * p.width, p.y - dirY * p.width,
+            p.x, p.y
+        );
+        gradient.addColorStop(0, 'rgba(50, 180, 255, 0)');
+        gradient.addColorStop(0.5, 'rgba(100, 200, 255, 0.8)');
+        gradient.addColorStop(1, 'rgba(220, 240, 255, 1)');
+        
+        // Draw the laser beam
         ctx.beginPath();
-        ctx.arc(p.x, p.y, 3, 0, Math.PI*2);
+        ctx.strokeStyle = gradient;
+        ctx.lineWidth = 3;
+        ctx.moveTo(p.x - dirX * p.width, p.y - dirY * p.width);
+        ctx.lineTo(p.x, p.y);
+        ctx.stroke();
+        
+        // Draw the bright laser tip
+        ctx.beginPath();
+        ctx.fillStyle = '#FFF';
+        ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
         ctx.fill();
     });
     
@@ -241,7 +284,12 @@ function render() {
     
     // Draw particles
     particles.forEach(p => {
-        ctx.fillStyle = `rgba(255, ${p.green}, 0, ${p.alpha})`;
+        if (p.isLaserTrail) {
+            // Special render for laser trail particles
+            ctx.fillStyle = `rgba(100, ${p.green}, ${p.blue}, ${p.alpha})`;
+        } else {
+            ctx.fillStyle = `rgba(255, ${p.green}, ${p.green > 200 ? 0 : p.blue || 0}, ${p.alpha})`;
+        }
         ctx.beginPath();
         ctx.arc(p.x, p.y, p.size, 0, Math.PI*2);
         ctx.fill();
@@ -323,10 +371,15 @@ function shoot() {
     projectiles.push({
         x: player.x + Math.cos(player.rotation) * 25,
         y: player.y + Math.sin(player.rotation) * 25,
-        velX: Math.cos(player.rotation) * 15,
-        velY: Math.sin(player.rotation) * 15,
-        timer: 50
+        velX: Math.cos(player.rotation) * 20, // Increased velocity
+        velY: Math.sin(player.rotation) * 20,
+        timer: 60, // Increased lifetime
+        width: 30, // Laser length
+        power: 2 // Damage power
     });
+    
+    // Add laser sound or flash effect
+    screenShake = 3; // Small screen shake for powerful weapon feedback
 }
 
 function updateProjectiles() {
@@ -334,6 +387,21 @@ function updateProjectiles() {
         p.x += p.velX;
         p.y += p.velY;
         p.timer--;
+        
+        // Create laser trail particles
+        if (Math.random() > 0.5) {
+            particles.push({
+                x: p.x - (Math.random() - 0.5) * 5,
+                y: p.y - (Math.random() - 0.5) * 5,
+                velX: (Math.random() - 0.5) * 0.5,
+                velY: (Math.random() - 0.5) * 0.5,
+                alpha: 0.7,
+                size: 2 + Math.random() * 2,
+                green: 200 + Math.random() * 55,
+                blue: 255, // Blue component for laser effect
+                isLaserTrail: true
+            });
+        }
     });
     
     // Remove old projectiles
@@ -389,7 +457,7 @@ function checkCollisions() {
             const pdy = p.y - enemy.y;
             const pDist = Math.sqrt(pdx*pdx + pdy*pdy);
             if(pDist < enemy.radius) {
-                enemy.health--;
+                enemy.health -= p.power || 1; // Use laser power property
                 score += 10;
                 createExplosion(p.x, p.y);
                 projectiles.splice(pi, 1);
@@ -489,6 +557,11 @@ function updateParticles() {
         p.y += p.velY;
         p.alpha -= 0.02;
         p.size *= 0.98;
+        
+        // Make laser trail particles fade faster
+        if (p.isLaserTrail) {
+            p.alpha -= 0.03;
+        }
     });
     
     for(let i = particles.length-1; i >= 0; i--) {
@@ -509,6 +582,14 @@ function resetGame() {
     player.velY = 0;
     document.getElementById('gameOver').style.display = 'none';
     update();
+}
+
+function togglePause() {
+    isPaused = !isPaused;
+    document.getElementById('pauseButton').textContent = isPaused ? 'Resume' : 'Pause';
+    if (!isPaused) {
+        update();
+    }
 }
 
 // Start game
