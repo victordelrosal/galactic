@@ -91,10 +91,37 @@ let isPaused = false;
 // Add laser sound effect
 const laserSound = new Audio('laser.mp3');
 
+// Parallax background layers
+const starLayers = [
+    { stars: [], count: 100, speed: 0.05, size: 0.8, color: 'rgba(255, 255, 255, 0.3)' }, // Distant stars
+    { stars: [], count: 70, speed: 0.1, size: 1.2, color: 'rgba(255, 255, 255, 0.5)' },   // Medium stars
+    { stars: [], count: 50, speed: 0.2, size: 1.5, color: 'rgba(255, 255, 255, 0.7)' },   // Close stars
+    { stars: [], count: 20, speed: 0.3, size: 2.0, color: 'rgba(200, 220, 255, 0.9)' }    // Very close stars
+];
+
+// Initialize star layers
+function initStarLayers() {
+    starLayers.forEach(layer => {
+        layer.stars = [];
+        for(let i = 0; i < layer.count; i++) {
+            layer.stars.push({
+                x: Math.random() * canvas.width,
+                y: Math.random() * canvas.height,
+                size: Math.random() * layer.size + 0.5,
+                // Some stars with slight color variation
+                color: Math.random() > 0.8 ? 
+                    `rgba(${200 + Math.random() * 55}, ${200 + Math.random() * 55}, ${220 + Math.random() * 35}, ${0.5 + Math.random() * 0.5})` 
+                    : layer.color
+            });
+        }
+    });
+}
+
 // Set canvas size
 function resizeCanvas() {
     canvas.width = window.innerWidth * 0.9;
     canvas.height = window.innerHeight * 0.9;
+    initStarLayers(); // Reinitialize stars when canvas resizes
 }
 resizeCanvas();
 window.addEventListener('resize', resizeCanvas);
@@ -131,6 +158,7 @@ function update() {
     updateProjectiles();
     updateEnemies();
     updateParticles();
+    updateStars(); // Update star positions for parallax effect
     spawnEnemies();
     checkCollisions();
     
@@ -158,6 +186,30 @@ function render() {
     ctx.translate(shakeX, shakeY);
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
+    
+    // Draw parallax star background
+    starLayers.forEach(layer => {
+        ctx.fillStyle = layer.color;
+        layer.stars.forEach(star => {
+            ctx.beginPath();
+            ctx.arc(star.x, star.y, star.size, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // For brightest stars, add a subtle glow
+            if (star.size > 1.5) {
+                ctx.beginPath();
+                const gradient = ctx.createRadialGradient(
+                    star.x, star.y, 0,
+                    star.x, star.y, star.size * 3
+                );
+                gradient.addColorStop(0, 'rgba(255, 255, 255, 0.2)');
+                gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+                ctx.fillStyle = gradient;
+                ctx.arc(star.x, star.y, star.size * 3, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        });
+    });
     
     // Draw gravity well (subtle hint)
     if (gravityEnabled) {
@@ -299,6 +351,23 @@ function render() {
     });
     
     ctx.restore();
+}
+
+// Update star positions based on player movement
+function updateStars() {
+    starLayers.forEach(layer => {
+        layer.stars.forEach(star => {
+            // Move stars in opposite direction of player movement to create parallax
+            star.x -= player.velX * layer.speed;
+            star.y -= player.velY * layer.speed;
+            
+            // Wrap stars around the screen
+            if (star.x < 0) star.x = canvas.width;
+            if (star.x > canvas.width) star.x = 0;
+            if (star.y < 0) star.y = canvas.height;
+            if (star.y > canvas.height) star.y = 0;
+        });
+    });
 }
 
 function handleInput() {
@@ -600,8 +669,12 @@ function togglePause() {
 }
 
 // Start game
+initStarLayers(); // Initialize star layers
 update();
 
+// We'll replace the old star particles with our new layered stars
+// Remove or comment out the old static star creation code
+/* 
 // Add background stars
 for(let i = 0; i < 200; i++) {
     particles.push({
@@ -614,6 +687,7 @@ for(let i = 0; i < 200; i++) {
         green: 0
     });
 }
+*/
 </script>
 </body>
 </html>
