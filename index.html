@@ -66,7 +66,7 @@
     <link rel="icon" type="image/svg+xml" href="favicon.svg">
 </head>
 <body>
-    <div id="hud">Score: <span id="score">0</span> | Health: <span id="health">100</span> | Fuel: <span id="fuel">100</span> | Use arrow keys or WASD to move</div>
+    <div id="hud">Score: <span id="score">0</span> | Health: <span id="health">100</span> | Fuel: <span id="fuel">100</span> | G: Toggle planet gravity | V: Toggle gravity fields | Use arrow keys or WASD to move</div>
     <button id="pauseButton" onclick="togglePause()">Pause</button>
     <div id="gameOver">
         GAME OVER!<br>
@@ -87,6 +87,12 @@ let gravityEnabled = false;
 const GRAVITY_CENTER_X = canvas.width / 2;
 const GRAVITY_CENTER_Y = canvas.height / 2;
 let isPaused = false;
+
+// Add gravity constants
+const GRAVITY_CONSTANT = 0.05; // Base gravity strength
+const GRAVITY_RADIUS_MULTIPLIER = 3; // How many times the planet radius will the gravity extend
+const GRAVITY_INDICATOR_OPACITY = 0.15; // Opacity of the gravity well indicator
+let showGravityFields = true; // Option to toggle gravity field visibility
 
 // Add laser sound effect
 const laserSound = new Audio('laser.mp3');
@@ -180,7 +186,8 @@ function createPlanet() {
         ringColor: `rgba(${150 + Math.random() * 100}, ${150 + Math.random() * 100}, ${150 + Math.random() * 100}, 0.7)`,
         ringWidth: radius * (0.5 + Math.random() * 0.5),
         ringAngle: Math.random() * Math.PI,
-        details: []
+        details: [],
+        currentGravityInfluence: 0 // Track current gravity influence for effects
     };
     
     // Add surface details (craters, clouds, etc)
@@ -326,8 +333,41 @@ function render() {
         ctx.fill();
     }
     
-    // Draw planets
+    // Draw planets with gravity wells
     planets.forEach(planet => {
+        // Optional: Draw gravity field when visible
+        if (showGravityFields) {
+            const gravityRadius = planet.radius * GRAVITY_RADIUS_MULTIPLIER;
+            
+            // Draw gravity field
+            const gravityGradient = ctx.createRadialGradient(
+                planet.x, planet.y, planet.radius,
+                planet.x, planet.y, gravityRadius
+            );
+            
+            // Determine color based on planet type
+            let gravityColor;
+            if (planet.color.startsWith('#8B45')) {
+                gravityColor = 'rgba(139, 69, 19, '; // Brown for rocky planets
+            } else if (planet.color.startsWith('#416') || planet.color.startsWith('#1E9')) {
+                gravityColor = 'rgba(65, 105, 225, '; // Blue for ice planets
+            } else if (planet.color.startsWith('#228') || planet.color.startsWith('#3CB')) {
+                gravityColor = 'rgba(34, 139, 34, '; // Green for forest planets
+            } else if (planet.color.startsWith('#CD5') || planet.color.startsWith('#8B0')) {
+                gravityColor = 'rgba(205, 92, 92, '; // Red for lava planets
+            } else {
+                gravityColor = 'rgba(218, 165, 32, '; // Gold for gas giants
+            }
+            
+            gravityGradient.addColorStop(0, gravityColor + GRAVITY_INDICATOR_OPACITY + ')');
+            gravityGradient.addColorStop(1, gravityColor + '0)');
+            
+            ctx.beginPath();
+            ctx.fillStyle = gravityGradient;
+            ctx.arc(planet.x, planet.y, gravityRadius, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        
         // Draw planet body
         ctx.beginPath();
         ctx.fillStyle = planet.color;
@@ -474,12 +514,14 @@ function render() {
         ctx.fill();
     });
     
-    // Draw enemies
-    ctx.fillStyle = '#F00';
+    // Draw enemies using their assigned renderer
     enemies.forEach(e => {
-        ctx.beginPath();
-        ctx.arc(e.x, e.y, e.radius, 0, Math.PI*2);
-        ctx.fill();
+        if (e.alienRenderer) {
+            e.alienRenderer(ctx, e.x, e.y, e.radius);
+        } else {
+            // Fallback to original alien renderer for compatibility with existing enemies
+            renderAlienEnemy(ctx, e.x, e.y, e.radius);
+        }
     });
     
     // Draw particles
@@ -537,14 +579,45 @@ function handleInput() {
     player.thrusting = false;
     if((keys['ArrowUp'] || keys['w']) && fuel > 0) {
         player.thrusting = true;
-        player.velX += Math.cos(player.rotation) * THRUST_POWER;
-        player.velY += Math.sin(player.rotation) * THRUST_POWER;
+        // Apply thrust in direction of player's rotation
+        const thrustX = Math.cos(player.rotation) * THRUST_POWER;
+        const thrustY = Math.sin(player.rotation) * THRUST_POWER;
+        
+        player.velX += thrustX;
+        player.velY += thrustY;
         
         // Create thruster particles
         createThrusterEffect();
         
+        // Consume fuel - more fuel consumption when fighting gravity
+        let fuelUsage = FUEL_CONSUMPTION;
+        
+        // Check if player is fighting gravity
+        planets.forEach(planet => {
+            if (planet.currentGravityInfluence > 0) {
+                // Direction from player to planet
+                const toPlanetX = planet.x - player.x;
+                const toPlanetY = planet.y - player.y;
+                const toPlanetMag = Math.sqrt(toPlanetX * toPlanetX + toPlanetY * toPlanetY);
+                
+                // Normalize both vectors
+                const toPlanetDirX = toPlanetX / toPlanetMag;
+                const toPlanetDirY = toPlanetY / toPlanetMag;
+                
+                // Dot product to see if player is thrusting against gravity
+                const dot = -(thrustX * toPlanetDirX + thrustY * toPlanetDirY);
+                
+                // If dot product is positive, player is thrusting against gravity
+                if (dot > 0) {
+                    // Increase fuel consumption when fighting gravity
+                    const gravityFactor = 1 + (planet.currentGravityInfluence * 2);
+                    fuelUsage *= gravityFactor;
+                }
+            }
+        });
+        
         // Consume fuel
-        fuel = Math.max(0, fuel - FUEL_CONSUMPTION);
+        fuel = Math.max(0, fuel - fuelUsage);
     } else {
         // Regenerate fuel slowly when not thrusting
         fuel = Math.min(MAX_FUEL, fuel + FUEL_REGEN);
@@ -568,9 +641,20 @@ function handleInput() {
         keys['g'] = false; // Reset to prevent multiple toggles
         gravityEnabled = !gravityEnabled;
     }
+    
+    // Add key to toggle gravity field visibility
+    if(keys['v']) {
+        keys['v'] = false; // Reset to prevent multiple toggles
+        showGravityFields = !showGravityFields;
+    }
 }
 
 function movePlayer() {
+    // Calculate gravitational influence from planets
+    if (gravityEnabled) {
+        applyPlanetaryGravity();
+    }
+    
     player.x += player.velX;
     player.y += player.velY;
     player.velX *= 0.98;
@@ -582,6 +666,40 @@ function movePlayer() {
     if(player.x > canvas.width) player.x = 0;
     if(player.y < 0) player.y = canvas.height;
     if(player.y > canvas.height) player.y = 0;
+}
+
+// New function to apply gravitational forces from planets
+function applyPlanetaryGravity() {
+    planets.forEach(planet => {
+        // Calculate distance from player to planet
+        const dx = planet.x - player.x;
+        const dy = planet.y - player.y;
+        const distSquared = dx * dx + dy * dy;
+        const dist = Math.sqrt(distSquared);
+        
+        // Calculate gravity radius (larger planets have wider gravity fields)
+        const gravityRadius = planet.radius * GRAVITY_RADIUS_MULTIPLIER;
+        
+        // If player is within gravity field but not colliding with the planet
+        if (dist < gravityRadius && dist > planet.radius + player.radius) {
+            // Calculate gravity strength (inverse square law)
+            // Larger planets have stronger gravity, and it gets stronger as you get closer
+            const gravityStrength = GRAVITY_CONSTANT * ((planet.radius * planet.radius) / distSquared);
+            
+            // Normalize direction vector from player to planet
+            const dirX = dx / dist;
+            const dirY = dy / dist;
+            
+            // Apply gravity to player's velocity
+            player.velX += dirX * gravityStrength;
+            player.velY += dirY * gravityStrength;
+            
+            // Store for visual indicator
+            planet.currentGravityInfluence = gravityStrength / GRAVITY_CONSTANT;
+        } else {
+            planet.currentGravityInfluence = 0;
+        }
+    });
 }
 
 function shoot() {
@@ -645,7 +763,8 @@ function spawnEnemies() {
             velX: (player.x - x) * 0.002,
             velY: (player.y - y) * 0.002,
             radius: 12,
-            health: 3
+            health: 3,
+            alienRenderer: getRandomAlienRenderer() // Assign a random alien renderer
         });
         
         enemySpawnTimer = 60;
@@ -880,22 +999,288 @@ initStarLayers(); // Initialize star layers
 initPlanets(); // Initialize planets
 update();
 
-// We'll replace the old star particles with our new layered stars
-// Remove or comment out the old static star creation code
-/* 
-// Add background stars
-for(let i = 0; i < 200; i++) {
-    particles.push({
-        x: Math.random() * canvas.width,
-        y: Math.random() * canvas.height,
-        velX: 0,
-        velY: 0,
-        alpha: Math.random(),
-        size: Math.random() * 2,
-        green: 0
-    });
+// Define alien enemy rendering functions
+function renderAlienEnemy(ctx, x, y, radius) {
+    // Main body (purple)
+    ctx.fillStyle = "#8e44ad";
+    ctx.beginPath();
+    ctx.arc(x, y, radius, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Outer glow
+    const gradient = ctx.createRadialGradient(
+        x, y, radius * 0.7,
+        x, y, radius * 1.3
+    );
+    gradient.addColorStop(0, "rgba(142, 68, 173, 0.6)");
+    gradient.addColorStop(1, "rgba(142, 68, 173, 0)");
+    
+    ctx.fillStyle = gradient;
+    ctx.beginPath();
+    ctx.arc(x, y, radius * 1.3, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Eyes (glowing green)
+    const eyeOffset = radius * 0.4;
+    const eyeRadius = radius * 0.25;
+    
+    // Left eye
+    ctx.fillStyle = "#2ecc71";
+    ctx.beginPath();
+    ctx.arc(x - eyeOffset, y - eyeOffset/2, eyeRadius, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Right eye
+    ctx.beginPath();
+    ctx.arc(x + eyeOffset, y - eyeOffset/2, eyeRadius, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Eye glow
+    ctx.fillStyle = "rgba(46, 204, 113, 0.5)";
+    ctx.beginPath();
+    ctx.arc(x - eyeOffset, y - eyeOffset/2, eyeRadius * 1.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(x + eyeOffset, y - eyeOffset/2, eyeRadius * 1.5, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Mouth (menacing)
+    ctx.strokeStyle = "#e74c3c";
+    ctx.lineWidth = radius * 0.1;
+    ctx.beginPath();
+    ctx.arc(x, y + radius * 0.2, radius * 0.4, 0.1 * Math.PI, 0.9 * Math.PI);
+    ctx.stroke();
+    
+    // Tentacles
+    ctx.strokeStyle = "#9b59b6";
+    ctx.lineWidth = radius * 0.15;
+    
+    for (let i = 0; i < 3; i++) {
+        const angle = (Math.PI / 4) + (i * Math.PI / 4);
+        const length = radius * 0.8;
+        
+        ctx.beginPath();
+        ctx.moveTo(x, y + radius * 0.5);
+        
+        // Create wavy tentacle effect
+        const cp1x = x + Math.cos(angle) * length * 0.5;
+        const cp1y = y + radius * 0.5 + Math.sin(angle) * length * 0.5;
+        const cp2x = x + Math.cos(angle) * length * 0.8;
+        const cp2y = y + radius * 0.5 + Math.sin(angle) * length * 0.8;
+        const endX = x + Math.cos(angle) * length;
+        const endY = y + radius * 0.5 + Math.sin(angle) * length;
+        
+        ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, endX, endY);
+        ctx.stroke();
+    }
 }
-*/
+
+// New alien type: Crystalline Guardian
+function renderCrystallineAlien(ctx, x, y, radius) {
+    // Base crystal body (blue)
+    ctx.fillStyle = "#3498db";
+    
+    // Draw hexagonal crystal body
+    ctx.beginPath();
+    for (let i = 0; i < 6; i++) {
+        const angle = (Math.PI * 2 * i) / 6;
+        const px = x + Math.cos(angle) * radius;
+        const py = y + Math.sin(angle) * radius;
+        
+        if (i === 0) {
+            ctx.moveTo(px, py);
+        } else {
+            ctx.lineTo(px, py);
+        }
+    }
+    ctx.closePath();
+    ctx.fill();
+    
+    // Crystal facets (light blue)
+    ctx.fillStyle = "#74b9ff";
+    for (let i = 0; i < 3; i++) {
+        const angle = (Math.PI * 2 * i) / 3;
+        
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.lineTo(
+            x + Math.cos(angle) * radius * 0.8,
+            y + Math.sin(angle) * radius * 0.8
+        );
+        ctx.lineTo(
+            x + Math.cos(angle + Math.PI/6) * radius * 0.8,
+            y + Math.sin(angle + Math.PI/6) * radius * 0.8
+        );
+        ctx.closePath();
+        ctx.fill();
+    }
+    
+    // Energy core (white-blue glow)
+    const coreGradient = ctx.createRadialGradient(
+        x, y, 0,
+        x, y, radius * 0.4
+    );
+    coreGradient.addColorStop(0, "rgba(255, 255, 255, 0.9)");
+    coreGradient.addColorStop(0.5, "rgba(142, 209, 252, 0.7)");
+    coreGradient.addColorStop(1, "rgba(0, 148, 211, 0)");
+    
+    ctx.fillStyle = coreGradient;
+    ctx.beginPath();
+    ctx.arc(x, y, radius * 0.4, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Outer energy field
+    const fieldGradient = ctx.createRadialGradient(
+        x, y, radius * 0.9,
+        x, y, radius * 1.4
+    );
+    fieldGradient.addColorStop(0, "rgba(52, 152, 219, 0.4)");
+    fieldGradient.addColorStop(1, "rgba(52, 152, 219, 0)");
+    
+    ctx.fillStyle = fieldGradient;
+    ctx.beginPath();
+    ctx.arc(x, y, radius * 1.4, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Energy spikes
+    ctx.strokeStyle = "#00a8ff";
+    ctx.lineWidth = radius * 0.07;
+    
+    for (let i = 0; i < 8; i++) {
+        const angle = (Math.PI * 2 * i) / 8;
+        ctx.beginPath();
+        ctx.moveTo(
+            x + Math.cos(angle) * radius * 0.7,
+            y + Math.sin(angle) * radius * 0.7
+        );
+        ctx.lineTo(
+            x + Math.cos(angle) * radius * 1.2,
+            y + Math.sin(angle) * radius * 1.2
+        );
+        ctx.stroke();
+    }
+}
+
+// New alien type: Shadow Hunter
+function renderShadowAlien(ctx, x, y, radius) {
+    // Shadowy base (dark with transparency)
+    const shadowGradient = ctx.createRadialGradient(
+        x, y, 0,
+        x, y, radius * 1.2
+    );
+    shadowGradient.addColorStop(0, "rgba(20, 20, 20, 0.9)");
+    shadowGradient.addColorStop(0.6, "rgba(30, 30, 30, 0.7)");
+    shadowGradient.addColorStop(1, "rgba(40, 40, 40, 0)");
+    
+    ctx.fillStyle = shadowGradient;
+    ctx.beginPath();
+    ctx.arc(x, y, radius * 1.2, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Main smoky body
+    ctx.fillStyle = "rgba(25, 25, 25, 0.8)";
+    
+    // Create irregular smoky shape
+    ctx.beginPath();
+    const points = 12;
+    for (let i = 0; i < points; i++) {
+        const angle = (Math.PI * 2 * i) / points;
+        const r = radius * (0.8 + Math.sin(i * 5) * 0.2);
+        const px = x + Math.cos(angle) * r;
+        const py = y + Math.sin(angle) * r;
+        
+        if (i === 0) {
+            ctx.moveTo(px, py);
+        } else {
+            ctx.lineTo(px, py);
+        }
+    }
+    ctx.closePath();
+    ctx.fill();
+    
+    // Reddish glowing eye
+    const eyeGradient = ctx.createRadialGradient(
+        x, y - radius * 0.15, 0,
+        x, y - radius * 0.15, radius * 0.35
+    );
+    eyeGradient.addColorStop(0, "rgba(255, 0, 0, 0.9)");
+    eyeGradient.addColorStop(0.7, "rgba(200, 0, 0, 0.5)");
+    eyeGradient.addColorStop(1, "rgba(100, 0, 0, 0)");
+    
+    ctx.fillStyle = eyeGradient;
+    ctx.beginPath();
+    ctx.arc(x, y - radius * 0.15, radius * 0.35, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Wispy tendrils
+    ctx.strokeStyle = "rgba(50, 50, 50, 0.6)";
+    ctx.lineWidth = radius * 0.06;
+    
+    for (let i = 0; i < 5; i++) {
+        const angle = Math.PI / 2 + (Math.PI * i) / 5;
+        const length = radius * (1 + Math.random() * 0.4);
+        
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        
+        // Create wavy, smoke-like tendrils
+        let currentX = x;
+        let currentY = y;
+        
+        const segments = 4;
+        for (let j = 1; j <= segments; j++) {
+            const segLength = length * j / segments;
+            const newX = x + Math.cos(angle + Math.sin(j * 0.8) * 0.2) * segLength;
+            const newY = y + Math.sin(angle + Math.sin(j * 0.8) * 0.2) * segLength;
+            
+            const cpX = (currentX + newX) / 2 + Math.random() * 10 - 5;
+            const cpY = (currentY + newY) / 2 + Math.random() * 10 - 5;
+            
+            ctx.quadraticCurveTo(cpX, cpY, newX, newY);
+            currentX = newX;
+            currentY = newY;
+        }
+        
+        ctx.stroke();
+    }
+}
+
+// Alien type selector - returns a random alien render function
+function getRandomAlienRenderer() {
+    const renderers = [
+        renderAlienEnemy,      // Original tentacled alien
+        renderCrystallineAlien, // New crystalline alien
+        renderShadowAlien      // New shadow alien
+    ];
+    
+    const randomIndex = Math.floor(Math.random() * renderers.length);
+    return renderers[randomIndex];
+}
+
+// Modify the spawnEnemies function to assign a random alien renderer
+function spawnEnemies() {
+    if(enemySpawnTimer-- <= 0) {
+        const side = Math.floor(Math.random() * 4);
+        let x, y;
+        if(side === 0) { x = 0; y = Math.random() * canvas.height; }
+        if(side === 1) { x = canvas.width; y = Math.random() * canvas.height; }
+        if(side === 2) { x = Math.random() * canvas.width; y = 0; }
+        if(side === 3) { x = Math.random() * canvas.width; y = canvas.height; }
+        
+        enemies.push({
+            x, y,
+            velX: (player.x - x) * 0.002,
+            velY: (player.y - y) * 0.002,
+            radius: 12,
+            health: 3,
+            alienRenderer: getRandomAlienRenderer() // Assign a random alien renderer
+        });
+        
+        enemySpawnTimer = 60;
+    }
+}
+
+// ...existing code...
 </script>
 </body>
 </html>
