@@ -99,6 +99,18 @@ const starLayers = [
     { stars: [], count: 20, speed: 0.3, size: 2.0, color: 'rgba(200, 220, 255, 0.9)' }    // Very close stars
 ];
 
+// Planet configuration
+const planetTypes = [
+    { minSize: 40, maxSize: 60, colors: ['#8B4513', '#A0522D', '#CD853F'], ringChance: 0.3, name: 'Rocky' },
+    { minSize: 50, maxSize: 80, colors: ['#4169E1', '#1E90FF', '#87CEEB'], ringChance: 0.1, name: 'Ice' },
+    { minSize: 60, maxSize: 100, colors: ['#228B22', '#3CB371', '#2E8B57'], ringChance: 0, name: 'Forest' },
+    { minSize: 70, maxSize: 120, colors: ['#CD5C5C', '#8B0000', '#B22222'], ringChance: 0.2, name: 'Lava' },
+    { minSize: 65, maxSize: 110, colors: ['#FFD700', '#DAA520', '#B8860B'], ringChance: 0.5, name: 'Gas Giant' }
+];
+
+// Planets array
+const planets = [];
+
 // Initialize star layers
 function initStarLayers() {
     starLayers.forEach(layer => {
@@ -117,11 +129,94 @@ function initStarLayers() {
     });
 }
 
+// Initialize planet layers
+function initPlanets() {
+    // Clear existing planets
+    planets.length = 0;
+    
+    // Create new planets - fewer planets, but they're bigger obstacles
+    const numPlanets = 3 + Math.floor(Math.random() * 3); // 3-5 planets
+    
+    for(let i = 0; i < numPlanets; i++) {
+        createPlanet();
+    }
+}
+
+function createPlanet() {
+    // Ensure planets are not generated too close to the player's starting position
+    let x, y, distFromCenter;
+    do {
+        x = canvas.width * 0.1 + Math.random() * canvas.width * 0.8;
+        y = canvas.height * 0.1 + Math.random() * canvas.height * 0.8;
+        
+        // Distance from center
+        const dx = x - canvas.width/2;
+        const dy = y - canvas.height/2;
+        distFromCenter = Math.sqrt(dx*dx + dy*dy);
+    } while (distFromCenter < 200); // Ensure planets start at least 200px from center
+    
+    // Select a random planet type
+    const planetType = planetTypes[Math.floor(Math.random() * planetTypes.length)];
+    
+    // Random radius based on planet type
+    const radius = planetType.minSize + Math.random() * (planetType.maxSize - planetType.minSize);
+    
+    // Random color from the planet type's palette
+    const color = planetType.colors[Math.floor(Math.random() * planetType.colors.length)];
+    
+    // Decide if planet has rings
+    const hasRings = Math.random() < planetType.ringChance;
+    
+    const planet = {
+        x,
+        y,
+        radius,
+        color,
+        hasRings,
+        ringColor: `rgba(${150 + Math.random() * 100}, ${150 + Math.random() * 100}, ${150 + Math.random() * 100}, 0.7)`,
+        ringWidth: radius * (0.5 + Math.random() * 0.5),
+        ringAngle: Math.random() * Math.PI,
+        details: []
+    };
+    
+    // Add surface details (craters, clouds, etc)
+    const detailCount = Math.floor(radius / 10) + 1;
+    for(let i = 0; i < detailCount; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const distance = Math.random() * (radius * 0.8);
+        planet.details.push({
+            x: Math.cos(angle) * distance,
+            y: Math.sin(angle) * distance,
+            radius: 2 + Math.random() * (radius * 0.15),
+            color: adjustColorBrightness(color, Math.random() > 0.5 ? 30 : -30)
+        });
+    }
+    
+    planets.push(planet);
+}
+
+// Helper function to adjust color brightness
+function adjustColorBrightness(hex, percent) {
+    // Convert hex to RGB
+    let r = parseInt(hex.substring(1, 3), 16);
+    let g = parseInt(hex.substring(3, 5), 16);
+    let b = parseInt(hex.substring(5, 7), 16);
+    
+    // Adjust brightness
+    r = Math.max(0, Math.min(255, r + percent));
+    g = Math.max(0, Math.min(255, g + percent));
+    b = Math.max(0, Math.min(255, b + percent));
+    
+    // Convert back to hex
+    return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
+}
+
 // Set canvas size
 function resizeCanvas() {
     canvas.width = window.innerWidth * 0.9;
     canvas.height = window.innerHeight * 0.9;
     initStarLayers(); // Reinitialize stars when canvas resizes
+    initPlanets(); // Reinitialize planets when canvas resizes
 }
 resizeCanvas();
 window.addEventListener('resize', resizeCanvas);
@@ -224,6 +319,52 @@ function render() {
         ctx.arc(GRAVITY_CENTER_X, GRAVITY_CENTER_Y, 200, 0, Math.PI * 2);
         ctx.fill();
     }
+    
+    // Draw planets
+    planets.forEach(planet => {
+        // Draw planet body
+        ctx.beginPath();
+        ctx.fillStyle = planet.color;
+        ctx.arc(planet.x, planet.y, planet.radius, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Draw planet surface details
+        planet.details.forEach(detail => {
+            ctx.beginPath();
+            ctx.fillStyle = detail.color;
+            ctx.arc(planet.x + detail.x, planet.y + detail.y, detail.radius, 0, Math.PI * 2);
+            ctx.fill();
+        });
+        
+        // Draw rings if planet has them
+        if(planet.hasRings) {
+            ctx.save();
+            ctx.translate(planet.x, planet.y);
+            ctx.rotate(planet.ringAngle);
+            ctx.scale(1, 0.3); // Flatten to create ring effect
+            
+            ctx.beginPath();
+            ctx.fillStyle = planet.ringColor;
+            ctx.arc(0, 0, planet.radius + planet.ringWidth, 0, Math.PI * 2);
+            ctx.arc(0, 0, planet.radius, 0, Math.PI * 2, true);
+            ctx.fill();
+            
+            ctx.restore();
+        }
+        
+        // Optional: Add atmospheric glow
+        const gradient = ctx.createRadialGradient(
+            planet.x, planet.y, planet.radius * 0.9,
+            planet.x, planet.y, planet.radius * 1.1
+        );
+        gradient.addColorStop(0, 'rgba(255, 255, 255, 0)');
+        gradient.addColorStop(1, 'rgba(255, 255, 255, 0.1)');
+        
+        ctx.beginPath();
+        ctx.fillStyle = gradient;
+        ctx.arc(planet.x, planet.y, planet.radius * 1.1, 0, Math.PI * 2);
+        ctx.fill();
+    });
     
     // Draw player
     ctx.translate(player.x, player.y);
@@ -515,6 +656,51 @@ function updateEnemies() {
 }
 
 function checkCollisions() {
+    // Check collisions with planets
+    planets.forEach(planet => {
+        // Check if player collided with planet
+        const dx = player.x - planet.x;
+        const dy = player.y - planet.y;
+        const dist = Math.sqrt(dx*dx + dy*dy);
+        
+        if(dist < player.radius + planet.radius) {
+            // Player crashed into planet
+            health = 0; // Kill the player
+            createExplosion(player.x, player.y, 30); // Big explosion
+            screenShake = 20; // More intense screen shake
+        }
+        
+        // Projectile collisions with planets
+        for(let i = projectiles.length - 1; i >= 0; i--) {
+            const p = projectiles[i];
+            const pdx = p.x - planet.x;
+            const pdy = p.y - planet.y;
+            const pDist = Math.sqrt(pdx*pdx + pdy*pdy);
+            
+            if(pDist < planet.radius) {
+                // Projectile hit planet - create small impact effect
+                createImpact(p.x, p.y);
+                projectiles.splice(i, 1);
+            }
+        }
+        
+        // Enemy collisions with planets
+        for(let i = enemies.length - 1; i >= 0; i--) {
+            const enemy = enemies[i];
+            const edx = enemy.x - planet.x;
+            const edy = enemy.y - planet.y;
+            const eDist = Math.sqrt(edx*edx + edy*edy);
+            
+            if(eDist < enemy.radius + planet.radius) {
+                // Enemy crashed into planet
+                createExplosion(enemy.x, enemy.y, 10);
+                enemies.splice(i, 1);
+                score += 25; // Bonus points when enemies crash into planets
+            }
+        }
+    });
+    
+    // Existing collision checks
     enemies.forEach((enemy, ei) => {
         // Player collision
         const dx = player.x - enemy.x;
@@ -545,6 +731,22 @@ function checkCollisions() {
             }
         });
     });
+}
+
+// Create impact effect when projectile hits a planet
+function createImpact(x, y) {
+    for(let i = 0; i < 5; i++) {
+        particles.push({
+            x, y,
+            velX: (Math.random() - 0.5) * 2,
+            velY: (Math.random() - 0.5) * 2,
+            alpha: 0.8,
+            size: 2 + Math.random() * 2,
+            green: 200 + Math.random() * 55,
+            blue: 255, // Blue component for laser effect
+            isLaserTrail: true
+        });
+    }
 }
 
 function createExplosion(x, y, count = 10) {
@@ -657,6 +859,7 @@ function resetGame() {
     player.velX = 0;
     player.velY = 0;
     document.getElementById('gameOver').style.display = 'none';
+    initPlanets(); // Reset planets with new random positions
     update();
 }
 
@@ -670,6 +873,7 @@ function togglePause() {
 
 // Start game
 initStarLayers(); // Initialize star layers
+initPlanets(); // Initialize planets
 update();
 
 // We'll replace the old star particles with our new layered stars
