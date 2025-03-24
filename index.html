@@ -25,6 +25,14 @@
             text-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
             right: 20px;
         }
+        #champion {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            color: #FFD700;
+            font-size: 24px;
+            text-shadow: 0 0 10px rgba(255, 215, 0, 0.5);
+        }
         #gameOver {
             display: none;
             position: fixed;
@@ -67,6 +75,7 @@
 </head>
 <body>
     <div id="hud">Score: <span id="score">0</span> | Health: <span id="health">100</span> | Fuel: <span id="fuel">100</span> | Planet Gravity: <span id="gravityStatus">ON</span> (G to toggle) | V: Toggle gravity fields | Use arrow keys or WASD to move</div>
+    <div id="champion">Champion: <span id="championName">None</span></div>
     <button id="pauseButton" onclick="togglePause()">Pause</button>
     <div id="gameOver">
         GAME OVER!<br>
@@ -1088,6 +1097,7 @@ function togglePause() {
 // Start game
 initStarLayers(); // Initialize star layers
 initPlanets(); // Initialize planets
+updateChampionDisplay(); // Display the current champion
 update();
 
 // Define alien enemy rendering functions
@@ -1399,7 +1409,12 @@ function saveHighScore() {
     highScore = { score: score, name: playerName };
     localStorage.setItem('highScore', JSON.stringify(highScore));
     document.getElementById('highScoreModal').style.display = 'none';
+    updateChampionDisplay();
     resetGame();
+}
+
+function updateChampionDisplay() {
+    document.getElementById('championName').textContent = highScore.name || 'None';
 }
 </script>
 </body>
