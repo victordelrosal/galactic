@@ -74,6 +74,14 @@
     </div>
     <canvas id="gameCanvas"></canvas>
 
+    <!-- High Score Input Modal -->
+    <div id="highScoreModal" style="display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #333; padding: 20px; border-radius: 10px; color: #FFF; text-align: center; z-index: 100;">
+        <h2>New High Score!</h2>
+        <p>Your Score: <span id="newHighScore"></span></p>
+        <input type="text" id="playerName" placeholder="Enter your name" style="padding: 10px; font-size: 16px; width: 80%; margin-bottom: 10px;">
+        <button onclick="saveHighScore()" style="padding: 10px 20px; font-size: 16px;">Save</button>
+    </div>
+
 <script>
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
@@ -256,6 +264,9 @@ const particles = [];
 const keys = {};
 let enemySpawnTimer = 0;
 
+// High score management
+let highScore = localStorage.getItem('highScore') ? JSON.parse(localStorage.getItem('highScore')) : { score: 0, name: '' };
+
 // Input handling
 window.addEventListener('keydown', e => keys[e.key] = true);
 window.addEventListener('keyup', e => keys[e.key] = false);
@@ -276,7 +287,7 @@ function update() {
     updateHUD();
     
     if(health <= 0) {
-        document.getElementById('gameOver').style.display = 'block';
+        checkHighScore();
         return;
     }
     
@@ -1374,7 +1385,22 @@ function updateHUD() {
     }
 }
 
-// ...existing code...
+function checkHighScore() {
+    if (score > highScore.score) {
+        document.getElementById('newHighScore').textContent = score;
+        document.getElementById('highScoreModal').style.display = 'block';
+    } else {
+        document.getElementById('gameOver').style.display = 'block';
+    }
+}
+
+function saveHighScore() {
+    const playerName = document.getElementById('playerName').value;
+    highScore = { score: score, name: playerName };
+    localStorage.setItem('highScore', JSON.stringify(highScore));
+    document.getElementById('highScoreModal').style.display = 'none';
+    resetGame();
+}
 </script>
 </body>
 </html>
