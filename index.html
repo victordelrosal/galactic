@@ -70,6 +70,45 @@
             background: #666;
             transform: scale(1.1);
         }
+
+        /* Mobile control buttons */
+        #mobileControls {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            z-index: 100;
+            display: none; /* Hidden by default, shown on touch devices */
+        }
+        
+        #shootButton {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            background: rgba(255, 100, 100, 0.7);
+            border: 3px solid rgba(255, 255, 255, 0.8);
+            color: white;
+            font-size: 16px;
+            font-weight: bold;
+            box-shadow: 0 0 15px rgba(255, 0, 0, 0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            user-select: none;
+            touch-action: manipulation;
+            transition: transform 0.1s, background 0.2s;
+        }
+        
+        #shootButton:active {
+            transform: scale(0.9);
+            background: rgba(255, 50, 50, 0.9);
+        }
+
+        @media (max-width: 1024px) {
+            #mobileControls {
+                display: block; /* Always show on smaller screens */
+            }
+        }
     </style>
     <link rel="icon" type="image/svg+xml" href="favicon.svg">
 </head>
@@ -91,6 +130,11 @@
         <button onclick="saveHighScore()" style="padding: 10px 20px; font-size: 16px;">Save</button>
     </div>
 
+    <!-- Mobile controls -->
+    <div id="mobileControls">
+        <div id="shootButton">SHOOT</div>
+    </div>
+
 <script>
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
@@ -100,6 +144,7 @@ const MAX_FUEL = 100;
 const FUEL_CONSUMPTION = 0.5;
 const FUEL_REGEN = 0.1;
 const THRUST_POWER = 0.2;
+const GAME_SPEED = 2; // Base speed for the scrolling effect
 
 // Fix: Enable gravity by default so it's working from the start
 let gravityEnabled = true; // Changed from false to true
@@ -116,16 +161,23 @@ let showGravityFields = true; // Option to toggle gravity field visibility
 // Add laser sound effect
 const laserSound = new Audio('laser.mp3');
 
+// Detect if device supports touch events
+let isTouchDevice = false;
+window.addEventListener('touchstart', function() {
+    isTouchDevice = true;
+    document.getElementById('mobileControls').style.display = 'block';
+}, { once: true });
+
 // Load astronaut image
 const astronautImage = new Image();
 astronautImage.src = 'astronaut.png';
 
-// Parallax background layers
+// Modify parallax background layers for vertical scrolling
 const starLayers = [
-    { stars: [], count: 100, speed: 0.05, size: 0.8, color: 'rgba(255, 255, 255, 0.3)' }, // Distant stars
-    { stars: [], count: 70, speed: 0.1, size: 1.2, color: 'rgba(255, 255, 255, 0.5)' },   // Medium stars
-    { stars: [], count: 50, speed: 0.2, size: 1.5, color: 'rgba(255, 255, 255, 0.7)' },   // Close stars
-    { stars: [], count: 20, speed: 0.3, size: 2.0, color: 'rgba(200, 220, 255, 0.9)' }    // Very close stars
+    { stars: [], count: 100, speed: 0.5, size: 0.8, color: 'rgba(255, 255, 255, 0.3)' }, // Distant stars
+    { stars: [], count: 70, speed: 1.0, size: 1.2, color: 'rgba(255, 255, 255, 0.5)' },   // Medium stars
+    { stars: [], count: 50, speed: 1.5, size: 1.5, color: 'rgba(255, 255, 255, 0.7)' },   // Close stars
+    { stars: [], count: 20, speed: 2.0, size: 2.0, color: 'rgba(200, 220, 255, 0.9)' }    // Very close stars
 ];
 
 // Planet configuration
@@ -140,7 +192,7 @@ const planetTypes = [
 // Planets array
 const planets = [];
 
-// Initialize star layers
+// Initialize star layers for vertical scrolling
 function initStarLayers() {
     starLayers.forEach(layer => {
         layer.stars = [];
@@ -158,31 +210,24 @@ function initStarLayers() {
     });
 }
 
-// Initialize planet layers
+// Modify planets to spawn at the top and move downward
 function initPlanets() {
     // Clear existing planets
     planets.length = 0;
     
-    // Create new planets - fewer planets, but they're bigger obstacles
-    const numPlanets = 3 + Math.floor(Math.random() * 3); // 3-5 planets
+    // Create initial planets that will move downward
+    const numPlanets = 2 + Math.floor(Math.random() * 2); // Reduced initial count
     
     for(let i = 0; i < numPlanets; i++) {
         createPlanet();
     }
 }
 
+// Modify planet creation to start them at the top
 function createPlanet() {
-    // Ensure planets are not generated too close to the player's starting position
-    let x, y, distFromCenter;
-    do {
-        x = canvas.width * 0.1 + Math.random() * canvas.width * 0.8;
-        y = canvas.height * 0.1 + Math.random() * canvas.height * 0.8;
-        
-        // Distance from center
-        const dx = x - canvas.width/2;
-        const dy = y - canvas.height/2;
-        distFromCenter = Math.sqrt(dx*dx + dy*dy);
-    } while (distFromCenter < 200); // Ensure planets start at least 200px from center
+    // Position planets above the visible area
+    const x = Math.random() * canvas.width;
+    const y = -100 - Math.random() * 300; // Start above the screen
     
     // Select a random planet type
     const planetType = planetTypes[Math.floor(Math.random() * planetTypes.length)];
@@ -206,6 +251,7 @@ function createPlanet() {
         ringWidth: radius * (0.5 + Math.random() * 0.5),
         ringAngle: Math.random() * Math.PI,
         details: [],
+        speed: 0.5 + Math.random() * 1.0, // Speed at which the planet moves down
         currentGravityInfluence: 0 // Track current gravity influence for effects
     };
     
@@ -251,19 +297,18 @@ function resizeCanvas() {
 resizeCanvas();
 window.addEventListener('resize', resizeCanvas);
 
-// Player
+// Player - modified for stationary position at bottom
 const player = {
-    x: canvas.width/2,
-    y: canvas.height/2,
+    x: canvas.width / 2,
+    y: canvas.height - 100, // Position near bottom
     velX: 0,
-    velY: 0,
     rotation: 0,
-    speed: 0.2,
-    cooldown: 0,
+    width: 80,
+    height: 80,
     radius: 20,
+    cooldown: 0,
     thrusting: false,
-    width: 80, // Width for the astronaut sprite
-    height: 80 // Height for the astronaut sprite
+    moveSpeed: 5 // Horizontal movement speed
 };
 
 // Game state
@@ -283,17 +328,27 @@ window.addEventListener('keyup', e => keys[e.key] = false);
 // Game loop
 function update() {
     if (isPaused) return;
+    
     handleInput();
-    movePlayer();
+    
+    // Apply gravity if enabled
+    if (gravityEnabled) {
+        applyPlanetaryGravity();
+    }
+    
+    // Update all game entities
     updateProjectiles();
     updateEnemies();
     updateParticles();
-    updateStars(); // Update star positions for parallax effect
+    updateStars();
+    updatePlanets(); // Add planet movement
+    
     spawnEnemies();
     checkCollisions();
     
-    // Update HUD
+    // Update HUD and game state
     updateHUD();
+    player.cooldown--;
     
     if(health <= 0) {
         checkHighScore();
@@ -304,8 +359,9 @@ function update() {
     render();
 }
 
+// Modified render function to display everything properly
 function render() {
-    // Screen shake
+    // Screen shake effect
     const shakeX = screenShake ? Math.random() * screenShake : 0;
     const shakeY = screenShake ? Math.random() * screenShake : 0;
     screenShake *= 0.9;
@@ -338,20 +394,6 @@ function render() {
             }
         });
     });
-    
-    // Draw gravity well (subtle hint)
-    if (gravityEnabled) {
-        ctx.beginPath();
-        const gradient = ctx.createRadialGradient(
-            GRAVITY_CENTER_X, GRAVITY_CENTER_Y, 0,
-            GRAVITY_CENTER_X, GRAVITY_CENTER_Y, 200
-        );
-        gradient.addColorStop(0, 'rgba(50, 0, 80, 0.1)');
-        gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
-        ctx.fillStyle = gradient;
-        ctx.arc(GRAVITY_CENTER_X, GRAVITY_CENTER_Y, 200, 0, Math.PI * 2);
-        ctx.fill();
-    }
     
     // Draw planets with gravity wells
     planets.forEach(planet => {
@@ -435,9 +477,8 @@ function render() {
     // Draw player (astronaut)
     ctx.save();
     ctx.translate(player.x, player.y);
-    ctx.rotate(player.rotation);
     
-    // Draw astronaut image instead of triangle
+    // Draw astronaut image
     ctx.drawImage(
         astronautImage, 
         -player.width/2, -player.height/2, 
@@ -458,102 +499,40 @@ function render() {
         ctx.fill();
     }
     
-    // Draw engine flames when thrusting
-    if (player.thrusting && fuel > 0) {
-        // Main thruster
-        ctx.beginPath();
-        // Create a more dynamic flame effect
-        const flameLength = 15 + Math.random() * 10; // Varying flame length
-        ctx.moveTo(-player.width/2, -8);
-        ctx.lineTo(-player.width/2 - flameLength, 0);
-        ctx.lineTo(-player.width/2, 8);
-        // Random orange-red flame colors
-        const flameColor = Math.floor(Math.random() * 155) + 100;
-        ctx.strokeStyle = `rgb(255, ${flameColor}, 0)`;
-        ctx.lineWidth = 3;
-        ctx.stroke();
-        
-        // Add some inner flame detail (brighter core)
-        ctx.beginPath();
-        ctx.moveTo(-player.width/2, -4);
-        ctx.lineTo(-player.width/2 - flameLength * 0.7, 0);
-        ctx.lineTo(-player.width/2, 4);
-        ctx.strokeStyle = '#FFFF00'; // Bright yellow core
-        ctx.lineWidth = 1.5;
-        ctx.stroke();
-    }
-    
-    // Directional thrusters for sideways movement
-    if((keys['ArrowLeft'] || keys['a']) && fuel > 0) {
-        // Right thruster fires when turning left
-        ctx.beginPath();
-        ctx.moveTo(0, player.height/2);
-        ctx.lineTo(5, player.height/2 + 8 + Math.random() * 5);
-        ctx.strokeStyle = '#FF8800';
-        ctx.lineWidth = 1.5;
-        ctx.stroke();
-    }
-    
-    if((keys['ArrowRight'] || keys['d']) && fuel > 0) {
-        // Left thruster fires when turning right
-        ctx.beginPath();
-        ctx.moveTo(0, -player.height/2);
-        ctx.lineTo(5, -player.height/2 - 8 - Math.random() * 5);
-        ctx.strokeStyle = '#FF8800';
-        ctx.lineWidth = 1.5;
-        ctx.stroke();
-    }
-    
-    // Breaking/reverse thrust
-    if((keys['ArrowDown'] || keys['s']) && fuel > 0) {
-        ctx.beginPath();
-        const revFlameLength = 8 + Math.random() * 6;
-        ctx.moveTo(player.width/2, -5);
-        ctx.lineTo(player.width/2 + revFlameLength, 0);
-        ctx.lineTo(player.width/2, 5);
-        ctx.strokeStyle = '#FF7700';
-        ctx.lineWidth = 2;
-        ctx.stroke();
-    }
-    
     ctx.restore();
     
     // Draw projectiles (lasers)
     projectiles.forEach(p => {
-        // Calculate the direction vector
-        const dirX = Math.cos(Math.atan2(p.velY, p.velX));
-        const dirY = Math.sin(Math.atan2(p.velY, p.velX));
-        
         // Create a gradient for the laser beam
         const gradient = ctx.createLinearGradient(
-            p.x - dirX * p.width, p.y - dirY * p.width,
-            p.x, p.y
+            p.x, p.y,
+            p.x, p.y - p.width
         );
-        gradient.addColorStop(0, 'rgba(50, 180, 255, 0)');
+        gradient.addColorStop(0, 'rgba(220, 240, 255, 1)');
         gradient.addColorStop(0.5, 'rgba(100, 200, 255, 0.8)');
-        gradient.addColorStop(1, 'rgba(220, 240, 255, 1)');
+        gradient.addColorStop(1, 'rgba(50, 180, 255, 0)');
         
         // Draw the laser beam
         ctx.beginPath();
         ctx.strokeStyle = gradient;
         ctx.lineWidth = 3;
-        ctx.moveTo(p.x - dirX * p.width, p.y - dirY * p.width);
-        ctx.lineTo(p.x, p.y);
+        ctx.moveTo(p.x, p.y);
+        ctx.lineTo(p.x, p.y - p.width);
         ctx.stroke();
         
         // Draw the bright laser tip
         ctx.beginPath();
         ctx.fillStyle = '#FFF';
-        ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
+        ctx.arc(p.x, p.y - p.width, 4, 0, Math.PI * 2);
         ctx.fill();
     });
     
-    // Draw enemies using their assigned renderer
+    // Draw enemies
     enemies.forEach(e => {
         if (e.alienRenderer) {
             e.alienRenderer(ctx, e.x, e.y, e.radius);
         } else {
-            // Fallback to original alien renderer for compatibility with existing enemies
+            // Fallback to original alien renderer
             renderAlienEnemy(ctx, e.x, e.y, e.radius);
         }
     });
@@ -568,94 +547,60 @@ function render() {
 function updateStars() {
     starLayers.forEach(layer => {
         layer.stars.forEach(star => {
-            // Move stars in opposite direction of player movement to create parallax
-            star.x -= player.velX * layer.speed;
-            star.y -= player.velY * layer.speed;
+            // Move stars downward at varying speeds for parallax
+            star.y += layer.speed * GAME_SPEED;
             
-            // Wrap stars around the screen
-            if (star.x < 0) star.x = canvas.width;
-            if (star.x > canvas.width) star.x = 0;
-            if (star.y < 0) star.y = canvas.height;
-            if (star.y > canvas.height) star.y = 0;
+            // Reset stars to the top when they move off-screen
+            if (star.y > canvas.height) {
+                star.y = 0;
+                star.x = Math.random() * canvas.width;
+            }
         });
     });
 }
 
+// Update planets to move downward
+function updatePlanets() {
+    // Move existing planets downward
+    for (let i = planets.length - 1; i >= 0; i--) {
+        planets[i].y += planets[i].speed * GAME_SPEED;
+        
+        // Remove planets that have moved off the bottom of the screen
+        if (planets[i].y > canvas.height + planets[i].radius * 2) {
+            planets.splice(i, 1);
+        }
+    }
+    
+    // Spawn new planets occasionally
+    if (Math.random() < 0.01 && planets.length < 5) {
+        createPlanet();
+    }
+}
+
 function handleInput() {
-    // Rotation controls
+    // Horizontal movement with arrow keys or A/D
     if(keys['ArrowLeft'] || keys['a']) {
-        player.rotation -= 0.08;
+        player.x -= player.moveSpeed;
         if(fuel > 0) {
-            createThrusterEffect(); // Also create particles for rotation
+            createSideThrusterEffect('left');
             fuel = Math.max(0, fuel - FUEL_CONSUMPTION / 4);
         }
     }
     
     if(keys['ArrowRight'] || keys['d']) {
-        player.rotation += 0.08;
+        player.x += player.moveSpeed;
         if(fuel > 0) {
-            createThrusterEffect(); // Also create particles for rotation
+            createSideThrusterEffect('right');
             fuel = Math.max(0, fuel - FUEL_CONSUMPTION / 4);
         }
     }
     
-    // Thrust controls with fuel consumption
-    player.thrusting = false;
-    if((keys['ArrowUp'] || keys['w']) && fuel > 0) {
-        player.thrusting = true;
-        // Apply thrust in direction of player's rotation
-        const thrustX = Math.cos(player.rotation) * THRUST_POWER;
-        const thrustY = Math.sin(player.rotation) * THRUST_POWER;
-        
-        player.velX += thrustX;
-        player.velY += thrustY;
-        
-        // Create thruster particles
-        createThrusterEffect();
-        
-        // Consume fuel - more fuel consumption when fighting gravity
-        let fuelUsage = FUEL_CONSUMPTION;
-        
-        // Check if player is fighting gravity
-        planets.forEach(planet => {
-            if (planet.currentGravityInfluence > 0) {
-                // Direction from player to planet
-                const toPlanetX = planet.x - player.x;
-                const toPlanetY = planet.y - player.y;
-                const toPlanetMag = Math.sqrt(toPlanetX * toPlanetX + toPlanetY * toPlanetY);
-                
-                // Normalize both vectors
-                const toPlanetDirX = toPlanetX / toPlanetMag;
-                const toPlanetDirY = toPlanetY / toPlanetMag;
-                
-                // Dot product to see if player is thrusting against gravity
-                const dot = -(thrustX * toPlanetDirX + thrustY * toPlanetDirY);
-                
-                // If dot product is positive, player is thrusting against gravity
-                if (dot > 0) {
-                    // Increase fuel consumption when fighting gravity
-                    const gravityFactor = 1 + (planet.currentGravityInfluence * 2);
-                    fuelUsage *= gravityFactor;
-                }
-            }
-        });
-        
-        // Consume fuel
-        fuel = Math.max(0, fuel - fuelUsage);
-    } else {
-        // Regenerate fuel slowly when not thrusting
-        fuel = Math.min(MAX_FUEL, fuel + FUEL_REGEN);
-    }
+    // Boundary checks
+    if(player.x < player.radius) player.x = player.radius;
+    if(player.x > canvas.width - player.radius) player.x = canvas.width - player.radius;
     
-    // Breaking/reverse thrust (slower, consumes less fuel)
-    if((keys['ArrowDown'] || keys['s']) && fuel > 0) {
-        player.velX *= 0.97;
-        player.velY *= 0.97;
-        createThrusterEffect(); // Create particles for braking too
-        fuel = Math.max(0, fuel - FUEL_CONSUMPTION / 3);
-    }
-    
-    if(keys[' '] && player.cooldown <= 0) {
+    // Shooting
+    if((keys[' '] || keys['ArrowUp'] || keys['w']) && player.cooldown <= 0) {
         shoot();
         player.cooldown = 10;
     }
@@ -671,6 +616,9 @@ function handleInput() {
         keys['v'] = false; // Reset to prevent multiple toggles
         showGravityFields = !showGravityFields;
     }
+    
+    // Regenerate fuel
+    fuel = Math.min(MAX_FUEL, fuel + FUEL_REGEN);
 }
 
 // Updated movePlayer function - explicitly call applyPlanetaryGravity
@@ -719,9 +667,11 @@ function applyPlanetaryGravity() {
             const dirX = dx / dist;
             const dirY = dy / dist;
             
-            // Apply gravity to player's velocity
-            player.velX += dirX * gravityStrength;
-            player.velY += dirY * gravityStrength;
+            // Apply gravity by moving player toward planet
+            player.x += dirX * gravityStrength * 3; // Increased effect for better visibility
+            
+            // Don't change player.y since we want to keep them at the bottom
+            // Just create visual effects to show gravity
             
             // Store for visual indicator
             planet.currentGravityInfluence = gravityStrength / GRAVITY_CONSTANT;
@@ -776,26 +726,46 @@ function createGravityPullEffect(playerX, playerY, planetX, planetY, planetColor
     });
 }
 
+// Modify the shoot function to fire upward
 function shoot() {
     projectiles.push({
-        x: player.x + Math.cos(player.rotation) * (player.width/2),
-        y: player.y + Math.sin(player.rotation) * (player.width/2),
-        velX: Math.cos(player.rotation) * 20, // Increased velocity
-        velY: Math.sin(player.rotation) * 20,
-        timer: 60, // Increased lifetime
+        x: player.x,
+        y: player.y - player.height/2,
+        velX: 0,
+        velY: -15, // Move upward
+        timer: 60,
         width: 30, // Laser length
         power: 2 // Damage power
     });
     
     // Play laser sound
-    laserSound.currentTime = 0; // Rewind the sound to the beginning
-    laserSound.play();
+    laserSound.currentTime = 0;
+    laserSound.play().catch(err => console.log('Sound play error:', err));
     
-    // Add laser sound or flash effect
-    screenShake = 3; // Small screen shake for powerful weapon feedback
+    screenShake = 3; // Small screen shake for feedback
+}
+
+// Create side thrusters for horizontal movement
+function createSideThrusterEffect(side) {
+    // Create multiple particles for better visibility
+    for (let i = 0; i < 3; i++) {
+        const xOffset = side === 'left' ? -15 - Math.random() * 10 : 15 + Math.random() * 10;
+        const yOffset = Math.random() * 20 - 10; // Spread vertically
+        
+        particles.push({
+            x: player.x + xOffset,
+            y: player.y + yOffset,
+            velX: (side === 'left' ? -1 : 1) * (1 + Math.random()),
+            velY: 1 + Math.random(),
+            alpha: 0.8,
+            size: 2 + Math.random() * 4, // Larger particles
+            green: 100 + Math.random() * 155
+        });
+    }
 }
 
 function updateProjectiles() {
+    // Update position
     projectiles.forEach(p => {
         p.x += p.velX;
         p.y += p.velY;
@@ -804,57 +774,74 @@ function updateProjectiles() {
         // Create laser trail particles
         if (Math.random() > 0.5) {
             particles.push({
-                x: p.x - (Math.random() - 0.5) * 5,
-                y: p.y - (Math.random() - 0.5) * 5,
+                x: p.x + (Math.random() - 0.5) * 5,
+                y: p.y + (Math.random() - 0.5) * 5,
                 velX: (Math.random() - 0.5) * 0.5,
-                velY: (Math.random() - 0.5) * 0.5,
+                velY: (Math.random() - 0.5) * 0.5 - 1, // Slight upward drift
                 alpha: 0.7,
                 size: 2 + Math.random() * 2,
                 green: 200 + Math.random() * 55,
-                blue: 255, // Blue component for laser effect
+                blue: 255,
                 isLaserTrail: true
             });
         }
     });
     
-    // Remove old projectiles
+    // Remove projectiles that are off-screen or expired
     for(let i = projectiles.length-1; i >= 0; i--) {
-        if(projectiles[i].timer <= 0) projectiles.splice(i, 1);
+        const p = projectiles[i];
+        if(p.timer <= 0 || p.y < -10) {
+            projectiles.splice(i, 1);
+        }
     }
 }
 
 function spawnEnemies() {
     if(enemySpawnTimer-- <= 0) {
-        const side = Math.floor(Math.random() * 4);
-        let x, y;
-        if(side === 0) { x = 0; y = Math.random() * canvas.height; }
-        if(side === 1) { x = canvas.width; y = Math.random() * canvas.height; }
-        if(side === 2) { x = Math.random() * canvas.width; y = 0; }
-        if(side === 3) { x = Math.random() * canvas.width; y = canvas.height; }
+        // Spawn enemies from the top of the screen
+        const x = Math.random() * canvas.width;
+        const y = -20; // Just above the visible area
         
         enemies.push({
-            x, y,
-            velX: (player.x - x) * 0.002,
-            velY: (player.y - y) * 0.002,
+            x, 
+            y,
+            velX: (Math.random() - 0.5) * 2, // Random horizontal movement
+            velY: 1 + Math.random() * 2,     // Move downward at varying speeds
             radius: 12,
             health: 3,
-            alienRenderer: getRandomAlienRenderer() // Assign a random alien renderer
+            alienRenderer: getRandomAlienRenderer()
         });
         
         enemySpawnTimer = 60;
     }
 }
 
+// Update the enemy movement for vertical scrolling
 function updateEnemies() {
-    enemies.forEach(e => {
-        e.x += e.velX;
-        e.y += e.velY;
-    });
+    // Move enemies
+    for (let i = enemies.length - 1; i >= 0; i--) {
+        const enemy = enemies[i];
+        enemy.x += enemy.velX;
+        enemy.y += enemy.velY;
+        
+        // Remove enemies that have moved off the bottom of the screen
+        if (enemy.y > canvas.height + enemy.radius) {
+            enemies.splice(i, 1);
+        }
+        
+        // Bounce off the sides of the screen
+        if (enemy.x < enemy.radius || enemy.x > canvas.width - enemy.radius) {
+            enemy.velX *= -1;
+        }
+    }
 }
 
+// Check collisions with modified planet movement
 function checkCollisions() {
     // Check collisions with planets
-    planets.forEach(planet => {
+    for (let i = planets.length - 1; i >= 0; i--) {
+        const planet = planets[i];
+        
         // Check if player collided with planet
         const dx = player.x - planet.x;
         const dy = player.y - planet.y;
@@ -868,8 +855,8 @@ function checkCollisions() {
         }
         
         // Projectile collisions with planets
-        for(let i = projectiles.length - 1; i >= 0; i--) {
-            const p = projectiles[i];
+        for(let j = projectiles.length - 1; j >= 0; j--) {
+            const p = projectiles[j];
             const pdx = p.x - planet.x;
             const pdy = p.y - planet.y;
             const pDist = Math.sqrt(pdx*pdx + pdy*pdy);
@@ -877,28 +864,15 @@ function checkCollisions() {
             if(pDist < planet.radius) {
                 // Projectile hit planet - create small impact effect
                 createImpact(p.x, p.y);
-                projectiles.splice(i, 1);
+                projectiles.splice(j, 1);
             }
         }
-        
-        // Enemy collisions with planets
-        for(let i = enemies.length - 1; i >= 0; i--) {
-            const enemy = enemies[i];
-            const edx = enemy.x - planet.x;
-            const edy = enemy.y - planet.y;
-            const eDist = Math.sqrt(edx*edx + edy*edy);
-            
-            if(eDist < enemy.radius + planet.radius) {
-                // Enemy crashed into planet
-                createExplosion(enemy.x, enemy.y, 10);
-                enemies.splice(i, 1);
-                score += 25; // Bonus points when enemies crash into planets
-            }
-        }
-    });
+    }
     
-    // Existing collision checks
-    enemies.forEach((enemy, ei) => {
+    // Check collisions between player and enemies
+    for (let i = enemies.length - 1; i >= 0; i--) {
+        const enemy = enemies[i];
+        
         // Player collision
         const dx = player.x - enemy.x;
         const dy = player.y - enemy.y;
@@ -907,27 +881,29 @@ function checkCollisions() {
             health -= 2;
             screenShake = 10;
             createExplosion(enemy.x, enemy.y);
-            enemies.splice(ei, 1);
+            enemies.splice(i, 1);
         }
         
         // Projectile collisions
-        projectiles.forEach((p, pi) => {
+        for (let j = projectiles.length - 1; j >= 0; j--) {
+            const p = projectiles[j];
             const pdx = p.x - enemy.x;
             const pdy = p.y - enemy.y;
             const pDist = Math.sqrt(pdx*pdx + pdy*pdy);
             if(pDist < enemy.radius) {
-                enemy.health -= p.power || 1; // Use laser power property
+                enemy.health -= p.power || 1;
                 score += 10;
                 createExplosion(p.x, p.y);
-                projectiles.splice(pi, 1);
+                projectiles.splice(j, 1);
                 if(enemy.health <= 0) {
                     createExplosion(enemy.x, enemy.y, 15);
-                    enemies.splice(ei, 1);
+                    enemies.splice(i, 1);
                     score += 50;
                 }
+                break; // Projectile can only hit one enemy
             }
-        });
-    });
+        }
+    }
 }
 
 // Create impact effect when projectile hits a planet
@@ -1074,15 +1050,21 @@ function resetGame() {
     health = 100;
     score = 0;
     fuel = 100;
+    player.x = canvas.width / 2;
+    player.cooldown = 0;
+    
+    // Reset entity collections
+    planets.length = 0;
     enemies.length = 0;
     projectiles.length = 0;
     particles.length = 0;
-    player.x = canvas.width/2;
-    player.y = canvas.height/2;
-    player.velX = 0;
-    player.velY = 0;
+    
     document.getElementById('gameOver').style.display = 'none';
-    initPlanets(); // Reset planets with new random positions
+    
+    // Initialize game objects
+    initPlanets();
+    
+    // Start game loop
     update();
 }
 
@@ -1358,29 +1340,6 @@ function getRandomAlienRenderer() {
     return renderers[randomIndex];
 }
 
-// Modify the spawnEnemies function to assign a random alien renderer
-function spawnEnemies() {
-    if(enemySpawnTimer-- <= 0) {
-        const side = Math.floor(Math.random() * 4);
-        let x, y;
-        if(side === 0) { x = 0; y = Math.random() * canvas.height; }
-        if(side === 1) { x = canvas.width; y = Math.random() * canvas.height; }
-        if(side === 2) { x = Math.random() * canvas.width; y = 0; }
-        if(side === 3) { x = Math.random() * canvas.width; y = canvas.height; }
-        
-        enemies.push({
-            x, y,
-            velX: (player.x - x) * 0.002,
-            velY: (player.y - y) * 0.002,
-            radius: 12,
-            health: 3,
-            alienRenderer: getRandomAlienRenderer() // Assign a random alien renderer
-        });
-        
-        enemySpawnTimer = 60;
-    }
-}
-
 // Make gravityEnabled status display in HUD
 function updateHUD() {
     document.getElementById('score').textContent = score;
@@ -1416,6 +1375,43 @@ function saveHighScore() {
 function updateChampionDisplay() {
     document.getElementById('championName').textContent = highScore.name || 'None';
 }
+
+// Initialize mobile controls
+function initMobileControls() {
+    const shootButton = document.getElementById('shootButton');
+    
+    // Prevent default touch behavior to avoid scrolling while playing
+    shootButton.addEventListener('touchstart', function(e) {
+        e.preventDefault();
+        if (!isPaused && health > 0 && player.cooldown <= 0) {
+            shoot();
+            player.cooldown = 10;
+        }
+    });
+    
+    // Visual feedback
+    shootButton.addEventListener('touchstart', function() {
+        this.style.transform = 'scale(0.9)';
+        this.style.background = 'rgba(255, 50, 50, 0.9)';
+    });
+    
+    shootButton.addEventListener('touchend', function() {
+        this.style.transform = 'scale(1)';
+        this.style.background = 'rgba(255, 100, 100, 0.7)';
+    });
+}
+
+// Initialize game
+function init() {
+    initStarLayers();
+    initPlanets();
+    initMobileControls();
+    updateChampionDisplay();
+    update();
+}
+
+// Start the game when the page loads
+window.addEventListener('DOMContentLoaded', init);
 </script>
 </body>
 </html>
